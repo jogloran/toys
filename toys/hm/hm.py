@@ -23,7 +23,7 @@ class FunctionType(object):
         return not self == other
         
     def __str__(self):
-        return '%s -> %s' % (self.argtype, self.restype)
+        return '(%s -> %s)' % (self.argtype, self.restype)
 
 class Integer(object):
     def __init__(self, v):
@@ -38,7 +38,7 @@ class Var(object):
         self.type = type
     
     def __str__(self):
-        return '%s:%s' % (self.name, self.type)
+        return '%s:(%s)' % (self.name, self.type)
         
 class Lambda(object):
     def __init__(self, var, body):
@@ -61,25 +61,23 @@ class TypeCheckerException(RuntimeError): pass
 class HMTypeChecker(object):
     def __init__(self):
         self.newtypes = imap(lambda e: '_t'+str(e), count(0))
-        self.types = {}
         
-    def check_type(self, term):
-        print term
+    def check_type(self, term, env={}):
         if isinstance(term, Integer):
             return AtomicType('int')
         elif isinstance(term, Lambda):
             # \x:X . t
-            self.types[term.var.name] = term.var.type
-            return FunctionType(term.var.type, self.check_type(term.body))
+            env[term.var.name] = term.var.type
+            return FunctionType(term.var.type, self.check_type(term.body, env))
         elif isinstance(term, Var):
-            vartype = self.types.get(term.name, None)
+            vartype = env.get(term.name, None)
             if not vartype:
                 raise TypeCheckerException('%s not free in environment' % term.name)
             return vartype
         elif isinstance(term, Apply):
             # (f x) f :: T1 -> T2, x :: X
-            argtype = self.check_type(term.arg) # X
-            funtype = self.check_type(term.fn)  # T1 -> T2
+            argtype = self.check_type(term.arg, env) # X
+            funtype = self.check_type(term.fn,  env)  # T1 -> T2
             if not isinstance(funtype, FunctionType):
                 raise TypeCheckerException('function type expected, %s received' % funtype)
             
@@ -99,8 +97,12 @@ if __name__ == '__main__':
     print t.check_type(f)
     g=Lambda(Var('y',AtomicType('int')),f)
     print t.check_type(g)
-    y=Var('y',AtomicType('int'))
-    z=Var('z',AtomicType('int'))
-    h=Lambda(y,z)
-    print t.check_type(h)
+    y=Var('y',AtomicType('Y'))
+    z=Var('z',AtomicType('Z'))
+    ytoz=Var('f',FunctionType(AtomicType('Y'),AtomicType('Z')))
+    # h=Lambda(y,z)
+    # print t.check_type(h)
+    i=Lambda(ytoz,Lambda(y,Apply(ytoz,y)))
+    print i
+    print t.check_type(i)
 #    h=Lambda('z', )
