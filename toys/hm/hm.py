@@ -64,18 +64,24 @@ class HMTypeChecker(object):
         self.types = {}
         
     def check_type(self, term):
+        print term
         if isinstance(term, Integer):
             return AtomicType('int')
         elif isinstance(term, Lambda):
             # \x:X . t
             self.types[term.var.name] = term.var.type
             return FunctionType(term.var.type, self.check_type(term.body))
+        elif isinstance(term, Var):
+            vartype = self.types.get(term.name, None)
+            if not vartype:
+                raise TypeCheckerException('%s not free in environment' % term.name)
+            return vartype
         elif isinstance(term, Apply):
             # (f x) f :: T1 -> T2, x :: X
             argtype = self.check_type(term.arg) # X
             funtype = self.check_type(term.fn)  # T1 -> T2
             if not isinstance(funtype, FunctionType):
-                raise TypeCheckerException('function type expected, %s received', funtype)
+                raise TypeCheckerException('function type expected, %s received' % funtype)
             
             # T1 should match X
             if funtype.argtype != argtype:
@@ -93,4 +99,8 @@ if __name__ == '__main__':
     print t.check_type(f)
     g=Lambda(Var('y',AtomicType('int')),f)
     print t.check_type(g)
+    y=Var('y',AtomicType('int'))
+    z=Var('z',AtomicType('int'))
+    h=Lambda(y,z)
+    print t.check_type(h)
 #    h=Lambda('z', )
