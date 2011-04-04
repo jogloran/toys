@@ -32,14 +32,21 @@ class Integer(object):
     def __str__(self):
         return self.v
         
-class Lambda(object):
-    def __init__(self, var, type, body):
-        self.var = var
+class Var(object):
+    def __init__(self, name, type):
+        self.name = name
         self.type = type
+    
+    def __str__(self):
+        return '%s:%s' % (self.name, self.type)
+        
+class Lambda(object):
+    def __init__(self, var, body):
+        self.var = var
         self.body = body
         
     def __str__(self):
-        return '\(%s:%s . %s)' % (self.var, self.type, self.body)
+        return '\(%s . %s)' % (self.var, self.body)
         
 class Apply(object):
     def __init__(self, fn, arg):
@@ -61,8 +68,8 @@ class HMTypeChecker(object):
             return AtomicType('int')
         elif isinstance(term, Lambda):
             # \x:X . t
-#            self.types[term.var] = term.type
-            return FunctionType(term.type, self.check_type(term.body))
+            self.types[term.var.name] = term.var.type
+            return FunctionType(term.var.type, self.check_type(term.body))
         elif isinstance(term, Apply):
             # (f x) f :: T1 -> T2, x :: X
             argtype = self.check_type(term.arg) # X
@@ -82,7 +89,8 @@ if __name__ == '__main__':
     
     # f = \x:int . 3 should be int -> int
     # g = \y:int . f should be int -> int -> int
-    f=Lambda('x',AtomicType('int'),Integer('3'))
+    f=Lambda(Var('x',AtomicType('int')),Integer('3'))
     print t.check_type(f)
-    g=Lambda('y',AtomicType('int'),f)
+    g=Lambda(Var('y',AtomicType('int')),f)
     print t.check_type(g)
+#    h=Lambda('z', )
