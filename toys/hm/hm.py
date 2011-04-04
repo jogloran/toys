@@ -103,32 +103,33 @@ class HMTypeChecker(object):
         unifier = {}
         while typeqs:
             lhs, rhs = typeqs.pop()
-            if isinstance(lhs, AtomicType) and isinstance(rhs, AtomicType):
-                pass
-            elif isinstance(lhs, TypeVar):
+            if isinstance(lhs, TypeVar):
                 unifier.update({lhs: rhs})
             elif isinstance(rhs, TypeVar):
                 unifier.update({rhs: lhs})
             elif isinstance(lhs, FunctionType) and isinstance(rhs, FunctionType):
                 typeqs.add( (lhs.argtype, rhs.argtype) )
                 typeqs.add( (lhs.restype, rhs.restype) )
-            else:
-                raise TypeCheckerException('Could not unify %s and %s' % (lhs,rhs))
+            elif isinstance(lhs, AtomicType) and isinstance(rhs, AtomicType):
+                if lhs != rhs:
+                    raise TypeCheckerException('failed to unify %s and %s' % (lhs, rhs))
         
         return unifier
                 
     def __init__(self):
         self.newtypes = imap(lambda e: TypeVar('_t'+str(e)), count(0))
-        self.typeqs = set()
         
-    def check_type(self, term, env={}, substs={}):
-#        print type(term)
+    def check_type(self, term, env=None, substs=None, typeqs=None):
+        if not env: env = {}
+        if not substs: substs = {}
+        if not typeqs: typeqs = set()
+
         if isinstance(term, Primitive):
             return term.type()
         elif isinstance(term, Lambda):
             # \x:X . t
             env[term.var.name] = term.var.type
-            bodytype = self.check_type(term.body, env, substs)
+            bodytype = self.check_type(term.body, env, substs, typeqs)
             return FunctionType(term.var.type.apply(substs), bodytype)
         elif isinstance(term, Var):
             vartype = env.get(term.name, None)
@@ -137,14 +138,14 @@ class HMTypeChecker(object):
             return vartype
         elif isinstance(term, Apply):
             # (f x) f :: T1 -> T2, x :: X
-            argtype = self.check_type(term.arg, env, substs) # X
-            funtype = self.check_type(term.fn,  env, substs)  # T1 -> T2
+            argtype = self.check_type(term.arg, env, substs, typeqs) # X
+            funtype = self.check_type(term.fn,  env, substs, typeqs)  # T1 -> T2
             newtype = self.newtypes.next()
             
-            self.typeqs.add( (funtype, FunctionType(argtype, newtype)) )
+            typeqs.add( (funtype, FunctionType(argtype, newtype)) )
             
             print 'new:%s'%newtype
-            substs.update(self.unify(self.typeqs))
+            substs.update(self.unify(typeqs))
             print substs
             print 'after subst:%s'%newtype.apply(substs)
             return newtype.apply(substs)
@@ -182,3 +183,6 @@ if __name__ == '__main__':
     x=Var('x',TypeVar('a'))
     i=Lambda(x,Apply(f,x))
     print t.check_type(i)
+    j=Lambda(Var('x',int),Apply(f,x))
+    print "f's type: %s"% t.check_type(f)
+    print t.check_type(j)
