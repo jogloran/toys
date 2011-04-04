@@ -100,22 +100,22 @@ from itertools import count, imap
 class TypeCheckerException(RuntimeError): pass
 class HMTypeChecker(object):
     def unify(self, typeqs):
-        if typeqs:
+        unifier = {}
+        while typeqs:
             lhs, rhs = typeqs.pop()
-            print type(lhs),type(rhs)
             if isinstance(lhs, AtomicType) and isinstance(rhs, AtomicType):
-                return self.unify(typeqs)
+                pass
             elif isinstance(lhs, TypeVar):
-                return dict({lhs: rhs}, **self.unify(typeqs))
+                unifier.update({lhs: rhs})
             elif isinstance(rhs, TypeVar):
-                return dict({rhs: lhs}, **self.unify(typeqs))
+                unifier.update({rhs: lhs})
             elif isinstance(lhs, FunctionType) and isinstance(rhs, FunctionType):
                 typeqs.add( (lhs.argtype, rhs.argtype) )
                 typeqs.add( (lhs.restype, rhs.restype) )
-                return self.unify(typeqs)
             else:
                 raise TypeCheckerException('Could not unify %s and %s' % (lhs,rhs))
-        return {}
+        
+        return unifier
                 
     def __init__(self):
         self.newtypes = imap(lambda e: TypeVar('_t'+str(e)), count(0))
