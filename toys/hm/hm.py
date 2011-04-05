@@ -1,15 +1,18 @@
+from itertools import count, imap
+
 class TypeVar(object):
-    def __init__(self, typevarname):
+    newvars = imap(lambda e: '_a'+str(e), count(0))
+    def __init__(self, typevarname=None):
+        if not typevarname:
+            typevarname = self.newvars.next()
         self.typevarname = typevarname
         
-    def __str__(self):
-        return self.typevarname
-    __repr__ = __str__
+    def __repr__(self):
+        return '`' + self.typevarname
     
     def apply(self, subst):
         value = subst.get(self, None)
-        if value: return value
-        return self
+        return value or self
 
 class AtomicType(object):
     def __init__(self, typename):
@@ -24,9 +27,8 @@ class AtomicType(object):
     def apply(self, subst):
         return self
         
-    def __str__(self):
+    def __repr__(self):
         return self.typename
-    __repr__ = __str__
         
 class FunctionType(object):
     def __init__(self, argtype, restype):
@@ -40,44 +42,35 @@ class FunctionType(object):
         return not self == other
         
     def apply(self, subst):
-        arg = subst.get(self.argtype, None)
-        res = subst.get(self.restype, None)
-        if arg: self.argtype = arg
-        if res: self.argtype = res
-        return self
+        return FunctionType(self.argtype.apply(subst), self.restype.apply(subst))
         
-    def __str__(self):
+    def __repr__(self):
         return '(%s -> %s)' % (self.argtype, self.restype)
-    __repr__ = __str__
 
 class Primitive(object): pass
-def Prim(_type):
-    class _(Primitive):
-        @staticmethod
-        def type():
-            return _type
-    return _
-
 class Integer(Primitive):
-    def __init__(self, v):
-        self.v = v
-        
-    def __str__(self):
-        return self.v
+    def __init__(self, value=0):
+        self.value = value
         
     @staticmethod
     def type(): return AtomicType('int')
+    
+    def __repr__(self): return str(self.value)
     
 class List(Primitive):
     @staticmethod
     def type(): return AtomicType('list')
         
 class Var(object):
-    def __init__(self, name, type):
+    def __init__(self, name, type=None):
         self.name = name
         self.type = type
+        
+    def __eq__(self, other):
+        return self.name == other.name
+    def __ne__(self, other): return not self != other
     
-    def __str__(self):
+    def __repr__(self):
         return '%s:(%s)' % (self.name, self.type)
         
 class Lambda(object):
@@ -85,7 +78,7 @@ class Lambda(object):
         self.var = var
         self.body = body
         
-    def __str__(self):
+    def __repr__(self):
         return '\(%s . %s)' % (self.var, self.body)
         
 class Apply(object):
@@ -93,20 +86,24 @@ class Apply(object):
         self.fn = fn
         self.arg = arg
         
-    def __str__(self):
+    def __repr__(self):
         return '(%s %s)' % (self.fn, self.arg)
         
-from itertools import count, imap
 class TypeCheckerException(RuntimeError): pass
 class HMTypeChecker(object):
     def unify(self, typeqs):
+        # TODO: no detection of infinite types
         unifier = {}
         while typeqs:
             lhs, rhs = typeqs.pop()
+            print "unify(%s ; %s)" % (lhs, rhs)
+            # if isinstance(lhs, TypeVar) and isinstance(rhs, TypeVar):
+            #     unifier.update({lhs: rhs, rhs: lhs})
             if isinstance(lhs, TypeVar):
                 unifier.update({lhs: rhs})
             elif isinstance(rhs, TypeVar):
                 unifier.update({rhs: lhs})
+
             elif isinstance(lhs, FunctionType) and isinstance(rhs, FunctionType):
                 typeqs.add( (lhs.argtype, rhs.argtype) )
                 typeqs.add( (lhs.restype, rhs.restype) )
@@ -114,51 +111,54 @@ class HMTypeChecker(object):
                 if lhs != rhs:
                     raise TypeCheckerException('failed to unify %s and %s' % (lhs, rhs))
         
+        print "unifier: %s" % unifier
         return unifier
                 
     def __init__(self):
         self.newtypes = imap(lambda e: TypeVar('_t'+str(e)), count(0))
         
-    def check_type(self, term, env=None, substs=None, typeqs=None):
-        if not env: env = {}
-        if not substs: substs = {}
-        if not typeqs: typeqs = set()
-
+    def check_type(self, term):
+        return self._check_type(term, {}, {}, set())
+        
+    def _check_type(self, term, env, substs, typeqs):        
         if isinstance(term, Primitive):
             return term.type()
         elif isinstance(term, Lambda):
-            # \x:X . t
-            env[term.var.name] = term.var.type
-            bodytype = self.check_type(term.body, env, substs, typeqs)
-            return FunctionType(term.var.type.apply(substs), bodytype)
+            env[term.var.name.typename] = term.var.type
+            bodytype = self._check_type(term.body, env, substs, typeqs)
+            return FunctionType(term.var.type.apply(substs), bodytype.apply(substs))
         elif isinstance(term, Var):
             vartype = env.get(term.name, None)
             if not vartype:
-                raise TypeCheckerException('%s not free in environment' % term.name)
+                raise TypeCheckerException('%s not bound in environment' % term.name)
+                
+            if term.type is None:
+                term.type = vartype
+                
             return vartype
         elif isinstance(term, Apply):
             # (f x) f :: T1 -> T2, x :: X
-            argtype = self.check_type(term.arg, env, substs, typeqs) # X
-            funtype = self.check_type(term.fn,  env, substs, typeqs)  # T1 -> T2
+            argtype = self._check_type(term.arg, env, substs, typeqs)  # X
+            funtype = self._check_type(term.fn,  env, substs, typeqs)  # T1 -> T2
             newtype = self.newtypes.next()
             
+            if isinstance(funtype, AtomicType):
+                raise TypeCheckerException('term of type %s not usable in funcall position' % funtype)
+            
+            # unify T1 -> T2 with X -> t and return t
             typeqs.add( (funtype, FunctionType(argtype, newtype)) )
             
-            print 'new:%s'%newtype
             substs.update(self.unify(typeqs))
-            print substs
-            print 'after subst:%s'%newtype.apply(substs)
             return newtype.apply(substs)
 
-        raise TypeCheckerException('failed to check type')
-        
+        raise TypeCheckerException('failed to check type: received %s as term' % term)        
         
 if __name__ == '__main__':
     t = HMTypeChecker()
     
     # f = \x:int . 3 should be int -> int
     # g = \y:int . f should be int -> int -> int
-    f=Lambda(Var('x',AtomicType('int')),Integer('3'))
+    f=Lambda(Var('x',AtomicType('int')),Integer())
     print t.check_type(f)
     g=Lambda(Var('y',AtomicType('int')),f)
     print t.check_type(g)
@@ -176,13 +176,12 @@ if __name__ == '__main__':
     list=AtomicType('list')
     f=Lambda(Var('x', int), List())
     print t.check_type(f)
-    g=Lambda(Var('f', t.check_type(f)), Apply(f,Integer(0)))
+    g=Lambda(Var('f', t.check_type(f)), Apply(f,Integer()))
     print t.check_type(g)
-    h=Apply(f,Integer(0))
+    h=Apply(f,Integer())
     print t.check_type(h)
     x=Var('x',TypeVar('a'))
     i=Lambda(x,Apply(f,x))
     print t.check_type(i)
     j=Lambda(Var('x',int),Apply(f,x))
-    print "f's type: %s"% t.check_type(f)
     print t.check_type(j)
