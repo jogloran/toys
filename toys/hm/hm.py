@@ -9,13 +9,24 @@ class TypeVar(object):
         
     def __repr__(self, brackets=False):
         return '`' + self.typevarname
+        
+    def __eq__(self, other):
+        if not isinstance(other, TypeVar): return False
+        return self.typevarname == other.typevarname
+    def __ne__(self, other): return not self == other
+    def __hash__(self):
+        return hash(self.typevarname)
     
     def apply(self, subst):
-        value = subst.get(self, None)
-        if value:
-            return value.apply(subst)
-        else:
-            return self
+        print 'applying %s to %s' % (subst,self)
+        value = self
+        while isinstance(value, TypeVar):
+            if value in subst:
+                value = subst[value]
+            else:
+                return value
+
+        return value.apply(subst)
 
 class AtomicType(object):
     def __init__(self, typename):
@@ -101,9 +112,14 @@ class HMTypeChecker(object):
         # TODO: no detection of infinite types
         unifier = {}
         while typeqs:
+            print'typeqs:%s'% typeqs
             lhs, rhs = typeqs.pop()
+            print 'l:%s, r:%s' % (lhs,rhs)
+            if lhs == rhs: continue
             
-            if isinstance(lhs, TypeVar):
+            if isinstance(lhs, TypeVar) and isinstance(rhs, TypeVar):
+                unifier.update({rhs: lhs})
+            elif isinstance(lhs, TypeVar):
                 unifier.update({lhs: rhs})
             elif isinstance(rhs, TypeVar):
                 unifier.update({rhs: lhs})
@@ -114,6 +130,8 @@ class HMTypeChecker(object):
             elif isinstance(lhs, AtomicType) and isinstance(rhs, AtomicType):
                 if lhs != rhs:
                     raise TypeCheckerException('failed to unify %s and %s' % (lhs, rhs))
+            else:
+                raise TypeCheckerException('failed to unify %s and %s' % (lhs, rhs))
         
         return unifier
                 
@@ -131,7 +149,7 @@ class HMTypeChecker(object):
             # TODO: need to avoid variable capture?
             env[term.var.name.typename] = term.var.type
             bodytype = self._check_type(term.body, env, substs, typeqs)
-            return FunctionType(term.var.type.apply(substs), bodytype.apply(substs)).apply(substs)
+            return FunctionType(term.var.type.apply(substs), bodytype.apply(substs))
         elif isinstance(term, Var):
             vartype = env.get(term.name, None)
             if not vartype:
@@ -154,6 +172,10 @@ class HMTypeChecker(object):
             typeqs.add( (funtype, FunctionType(argtype, newtype)) )
             
             substs.update(self.unify(typeqs))
+            print env
+            for var in env:
+                env[var] = env[var].apply(substs)
+
             print "unifier: %s" % substs
             return newtype.apply(substs)
 
