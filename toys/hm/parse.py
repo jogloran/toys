@@ -88,11 +88,18 @@ def p_type(stk):
     elif len(stk) == 2:
         stk[0] = stk[1]
     
+from itertools import imap, count
+freshvars = imap(lambda e: TypeVar('_v'+str(e)), count(0))
 def p_vardef(stk):
     '''
     vardef : varname COLON type
+           | varname
     '''
-    stk[0] = Var(stk[1], stk[3])
+    if len(stk) == 4:
+        stk[0] = Var(stk[1], stk[3])
+    elif len(stk) == 2:
+        global freshvars
+        stk[0] = Var(stk[1], freshvars.next())
 
 tokens = ('INT', 'LAMBDA', 'LPA', 'RPA', 'DOT', 'COLON', 'ARROW', 'BACKTICK', 'NAME')
 

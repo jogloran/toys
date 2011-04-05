@@ -127,7 +127,7 @@ class HMTypeChecker(object):
                 typeqs.add( (lhs.restype, rhs.restype) )
             elif isinstance(lhs, AtomicType) and isinstance(rhs, AtomicType):
                 if lhs != rhs:
-                    raise TypeCheckerException('failed to unify %s and %s' % (lhs, rhs))
+                    raise TypeCheckerException('atomic types %s and %s failed to unify' % (lhs, rhs))
             else:
                 raise TypeCheckerException('failed to unify %s and %s' % (lhs, rhs))
         
@@ -152,6 +152,7 @@ class HMTypeChecker(object):
             if not vartype:
                 raise TypeCheckerException('%s not bound in environment' % term.name)
             
+            # term.type is None => use the type from the declaration of the variable
             if term.type is None:
                 term.type = vartype
             
