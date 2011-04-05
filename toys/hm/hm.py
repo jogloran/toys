@@ -16,12 +16,22 @@ class TypeVar(object):
     def __ne__(self, other): return not self == other
     def __hash__(self):
         return hash(self.typevarname)
+        
+    def occurs_check(self, typevar, type):
+        if isinstance(type, TypeVar):
+            if type == typevar: return True
+        elif isinstance(type, FunctionType):
+            return (self.occurs_check(typevar, type.argtype) or
+                    self.occurs_check(typevar, type.restype))
+        return False
     
     def apply(self, subst):
         # Substitute typevars repeatedly with their replacements
         value = self
         while isinstance(value, TypeVar):
             if value in subst:
+                if self.occurs_check(value, subst[value]):
+                    raise TypeCheckerException('occurs check failed: %s and %s' % (value, subst[value]))
                 value = subst[value]
             else:
                 return value
@@ -146,7 +156,7 @@ class HMTypeChecker(object):
             # TODO: need to avoid variable capture?
             env[term.var.name.typename] = term.var.type
             bodytype = self._check_type(term.body, env, substs, typeqs)
-            return FunctionType(term.var.type.apply(substs), bodytype.apply(substs))
+            return FunctionType(term.var.type, bodytype).apply(substs)
         elif isinstance(term, Var):
             vartype = env.get(term.name, None)
             if not vartype:
