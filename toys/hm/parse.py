@@ -144,7 +144,7 @@ def p_error(stk):
 def parse(s):
     lex.lex()
     yacc.yacc()
-
+    
     query = yacc.parse(s)
     return query
     

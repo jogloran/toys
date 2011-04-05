@@ -7,12 +7,15 @@ class TypeVar(object):
             typevarname = self.newvars.next()
         self.typevarname = typevarname
         
-    def __repr__(self):
+    def __repr__(self, brackets=False):
         return '`' + self.typevarname
     
     def apply(self, subst):
         value = subst.get(self, None)
-        return value or self
+        if value:
+            return value.apply(subst)
+        else:
+            return self
 
 class AtomicType(object):
     def __init__(self, typename):
@@ -25,9 +28,9 @@ class AtomicType(object):
         return not self == other
         
     def apply(self, subst):
-        return self
+        return self # unify() only maps from TypeVars
         
-    def __repr__(self):
+    def __repr__(self, brackets=False):
         return self.typename
         
 class FunctionType(object):
@@ -44,8 +47,11 @@ class FunctionType(object):
     def apply(self, subst):
         return FunctionType(self.argtype.apply(subst), self.restype.apply(subst))
         
-    def __repr__(self):
-        return '(%s -> %s)' % (self.argtype, self.restype)
+    def __repr__(self, brackets=False):
+        return '%s%s -> %s%s' % (
+            '(' if brackets else '',
+            self.argtype.__repr__(brackets=True), self.restype,
+            ')' if brackets else '')
 
 class Primitive(object): pass
 class Integer(Primitive):
@@ -68,7 +74,7 @@ class Var(object):
         
     def __eq__(self, other):
         return self.name == other.name
-    def __ne__(self, other): return not self != other
+    def __ne__(self, other): return not self == other
     
     def __repr__(self):
         return '%s:(%s)' % (self.name, self.type)
@@ -117,13 +123,15 @@ class HMTypeChecker(object):
     def check_type(self, term):
         return self._check_type(term, {}, {}, set())
         
-    def _check_type(self, term, env, substs, typeqs):        
+    def _check_type(self, term, env, substs, typeqs):
+        print term,env,substs,typeqs
         if isinstance(term, Primitive):
             return term.type()
         elif isinstance(term, Lambda):
+            # TODO: need to avoid variable capture?
             env[term.var.name.typename] = term.var.type
             bodytype = self._check_type(term.body, env, substs, typeqs)
-            return FunctionType(term.var.type.apply(substs), bodytype.apply(substs))
+            return FunctionType(term.var.type.apply(substs), bodytype.apply(substs)).apply(substs)
         elif isinstance(term, Var):
             vartype = env.get(term.name, None)
             if not vartype:
@@ -146,6 +154,7 @@ class HMTypeChecker(object):
             typeqs.add( (funtype, FunctionType(argtype, newtype)) )
             
             substs.update(self.unify(typeqs))
+            print "unifier: %s" % substs
             return newtype.apply(substs)
 
         raise TypeCheckerException('failed to check type: received %s as term' % term)        
