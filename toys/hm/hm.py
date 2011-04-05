@@ -96,9 +96,7 @@ class HMTypeChecker(object):
         unifier = {}
         while typeqs:
             lhs, rhs = typeqs.pop()
-            print "unify(%s ; %s)" % (lhs, rhs)
-            # if isinstance(lhs, TypeVar) and isinstance(rhs, TypeVar):
-            #     unifier.update({lhs: rhs, rhs: lhs})
+            
             if isinstance(lhs, TypeVar):
                 unifier.update({lhs: rhs})
             elif isinstance(rhs, TypeVar):
@@ -111,7 +109,6 @@ class HMTypeChecker(object):
                 if lhs != rhs:
                     raise TypeCheckerException('failed to unify %s and %s' % (lhs, rhs))
         
-        print "unifier: %s" % unifier
         return unifier
                 
     def __init__(self):
@@ -152,36 +149,3 @@ class HMTypeChecker(object):
             return newtype.apply(substs)
 
         raise TypeCheckerException('failed to check type: received %s as term' % term)        
-        
-if __name__ == '__main__':
-    t = HMTypeChecker()
-    
-    # f = \x:int . 3 should be int -> int
-    # g = \y:int . f should be int -> int -> int
-    f=Lambda(Var('x',AtomicType('int')),Integer())
-    print t.check_type(f)
-    g=Lambda(Var('y',AtomicType('int')),f)
-    print t.check_type(g)
-    y=Var('y',AtomicType('Y'))
-    z=Var('z',AtomicType('Z'))
-    ytoz=Var('f',FunctionType(AtomicType('Y'),AtomicType('Z')))
-    # h=Lambda(y,z)
-    # print t.check_type(h)
-    i=Lambda(ytoz,Lambda(y,Apply(ytoz,y)))
-    print i
-    print t.check_type(i)
-#    h=Lambda('z', )
-
-    int=AtomicType('int')
-    list=AtomicType('list')
-    f=Lambda(Var('x', int), List())
-    print t.check_type(f)
-    g=Lambda(Var('f', t.check_type(f)), Apply(f,Integer()))
-    print t.check_type(g)
-    h=Apply(f,Integer())
-    print t.check_type(h)
-    x=Var('x',TypeVar('a'))
-    i=Lambda(x,Apply(f,x))
-    print t.check_type(i)
-    j=Lambda(Var('x',int),Apply(f,x))
-    print t.check_type(j)
