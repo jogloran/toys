@@ -25,9 +25,8 @@ from hm import *
 def p_term(stk):
     '''
     term : LPA term term RPA
-         | LAMBDA vardef DOT term
+         | LAMBDA vardef ARROW term
          | value
-         | var
     '''
     if len(stk) == 5:
         if stk[1] == '(':
@@ -37,7 +36,6 @@ def p_term(stk):
     elif len(stk) == 2:
         stk[0] = stk[1]
         
-
 def p_var(stk):
     '''
     var : NAME
@@ -50,9 +48,17 @@ def p_int(stk):
     '''
     stk[0] = Integer(int(stk[1]))
     
+def p_real(stk):
+    '''
+    real : REAL
+    '''
+    stk[0] = Real(float(stk[1]))
+    
 def p_value(stk):
     '''
     value : int
+          | real
+          | var
     '''
     stk[0] = stk[1]
     
@@ -101,7 +107,7 @@ def p_vardef(stk):
         global freshvars
         stk[0] = Var(stk[1], freshvars.next())
 
-tokens = ('INT', 'LAMBDA', 'LPA', 'RPA', 'DOT', 'COLON', 'ARROW', 'BACKTICK', 'NAME')
+tokens = ('INT', 'REAL', 'LAMBDA', 'LPA', 'RPA', 'COLON', 'ARROW', 'BACKTICK', 'NAME')
 
 def t_NAME(t):
     r'[a-zA-Z][a-zA-Z0-9]*'
@@ -110,7 +116,7 @@ def t_NAME(t):
 def t_INT(t):
     r'\d+'
     return t
-
+    
 def t_LAMBDA(t):
     r'\\'
     return t
@@ -123,8 +129,8 @@ def t_RPA(t):
     r'\)'
     return t
     
-def t_DOT(t):
-    r'\.'
+def t_REAL(t):
+    r"\.\d+"
     return t
     
 def t_COLON(t):
@@ -155,7 +161,6 @@ def parse(s):
     query = yacc.parse(s)
     return query
     
-import sys
 if __name__ == '__main__':
     term = parse(sys.argv[1])
     t = HMTypeChecker()

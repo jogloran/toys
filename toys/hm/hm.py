@@ -1,7 +1,17 @@
-from itertools import count, imap
+from itertools import imap, count
+
+class FreshVars(object):
+    '''Provides a source of strings of the form pref0, pref1, ...'''
+    def __init__(self, prefix=''):
+        self.prefix = prefix
+        
+    def __iter__(self):
+        return imap(lambda e: self.prefix+str(e), count(0))
 
 class TypeVar(object):
-    newvars = imap(lambda e: '_a'+str(e), count(0))
+    '''Represents a type variable `a.'''
+    newvars = iter(FreshVars('_a'))
+    
     def __init__(self, typevarname=None):
         if not typevarname:
             typevarname = self.newvars.next()
@@ -18,6 +28,7 @@ class TypeVar(object):
         return hash(self.typevarname)
         
     def occurs_check(self, typevar, type):
+        '''Determines if _typevar_ occurs within _type_.'''
         if isinstance(type, TypeVar):
             if type == typevar: return True
         elif isinstance(type, FunctionType):
@@ -26,6 +37,7 @@ class TypeVar(object):
         return False
     
     def apply(self, subst):
+        '''Applies a unifier _subst_ to this type variable, returning a type.'''
         # Substitute typevars repeatedly with their replacements
         value = self
         while isinstance(value, TypeVar):
@@ -39,6 +51,7 @@ class TypeVar(object):
         return value.apply(subst)
 
 class AtomicType(object):
+    '''Represents an atomic type.'''
     def __init__(self, typename):
         self.typename = typename
     
@@ -49,12 +62,14 @@ class AtomicType(object):
         return not self == other
     
     def apply(self, subst):
+        '''Applies a unifier to this atomic type.'''
         return self # unify() only maps from TypeVars
     
     def __repr__(self, brackets=False):
         return self.typename
 
 class FunctionType(object):
+    '''Represents a function type Arg -> Res.'''
     def __init__(self, argtype, restype):
         self.argtype = argtype
         self.restype = restype
@@ -66,6 +81,7 @@ class FunctionType(object):
         return not self == other
     
     def apply(self, subst):
+        '''Applies a unifier to this function type.'''
         return FunctionType(self.argtype.apply(subst), self.restype.apply(subst))
     
     def __repr__(self, brackets=False):
@@ -83,12 +99,22 @@ class Integer(Primitive):
     def type(): return AtomicType('int')
     
     def __repr__(self): return str(self.value)
+    
+class Real(Primitive):
+    def __init__(self, value=0.):
+        self.value = value
+
+    @staticmethod
+    def type(): return AtomicType('real')
+
+    def __repr__(self): return str(self.value)
 
 class List(Primitive):
     @staticmethod
     def type(): return AtomicType('list')
 
 class Var(object):
+    '''Represents a reference to a previously bound variable.'''
     def __init__(self, name, type=None):
         self.name = name
         self.type = type
@@ -101,6 +127,7 @@ class Var(object):
         return '%s:(%s)' % (self.name, self.type)
 
 class Lambda(object):
+    '''Represents a unary lambda function.'''
     def __init__(self, var, body):
         self.var = var
         self.body = body
@@ -109,6 +136,7 @@ class Lambda(object):
         return '\(%s . %s)' % (self.var, self.body)
 
 class Apply(object):
+    '''Represents a function application.'''
     def __init__(self, fn, arg):
         self.fn = fn
         self.arg = arg
@@ -119,22 +147,28 @@ class Apply(object):
 class TypeCheckerException(RuntimeError): pass
 class HMTypeChecker(object):
     def unify(self, typeqs):
-        # TODO: no detection of infinite types
+        '''Computes the most general unifier for _typeqs_, a set of type equations.'''
         unifier = {}
         while typeqs:
             lhs, rhs = typeqs.pop()
             if lhs == rhs: continue
             
+            # given <`a, `b>, map `b arbitrarily to `a so that the reference
+            # can be followed during substitution
             if isinstance(lhs, TypeVar) and isinstance(rhs, TypeVar):
                 unifier.update({rhs: lhs})
+            # given <`a, T>, map `a to T
             elif isinstance(lhs, TypeVar):
                 unifier.update({lhs: rhs})
+            # given <T, `b>, map `b to T
             elif isinstance(rhs, TypeVar):
                 unifier.update({rhs: lhs})
             
+            # given <A -> B, C -> D>, unify <A, C>, <B, D> 
             elif isinstance(lhs, FunctionType) and isinstance(rhs, FunctionType):
                 typeqs.add( (lhs.argtype, rhs.argtype) )
                 typeqs.add( (lhs.restype, rhs.restype) )
+            # given <T1, T2>, raise an error if they aren't the same type
             elif isinstance(lhs, AtomicType) and isinstance(rhs, AtomicType):
                 if lhs != rhs:
                     raise TypeCheckerException('atomic types %s and %s failed to unify' % (lhs, rhs))
@@ -144,9 +178,10 @@ class HMTypeChecker(object):
         return unifier
     
     def __init__(self):
-        self.newtypes = imap(lambda e: TypeVar('_t'+str(e)), count(0))
+        self.newtypes = imap(lambda e: TypeVar(e), FreshVars('_t'))
     
     def check_type(self, term):
+        '''Returns the type of _term_.'''
         return self._check_type(term, {}, {}, set())
     
     def _check_type(self, term, env, substs, typeqs):
@@ -163,8 +198,7 @@ class HMTypeChecker(object):
                 raise TypeCheckerException('%s not bound in environment' % term.name)
             
             # term.type is None => use the type from the declaration of the variable
-            if term.type is None:
-                term.type = vartype
+            if term.type is None: term.type = vartype
             
             return vartype
         elif isinstance(term, Apply):
@@ -184,6 +218,7 @@ class HMTypeChecker(object):
             for var in env:
                 env[var] = env[var].apply(substs)
             
+            # return t with the unifier applied
             return newtype.apply(substs)
         
         raise TypeCheckerException('failed to check type: received %s as term' % term)
