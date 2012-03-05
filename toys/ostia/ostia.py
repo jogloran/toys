@@ -1,3 +1,4 @@
+# coding: utf-8
 '''
 >>> t = Transducer()
 >>> P = State(label='P', output='400')
@@ -12,6 +13,9 @@ True
 >>> P in t.outgoing_states_from(Q)
 False
 '''
+
+def debug(s, *args):
+    print >>sys.stderr, s % args
 
 import sys
 import copy
@@ -47,6 +51,26 @@ class State(object):
         
 LAMBDA = ''
 class Transducer(object):
+    def as_graph(self):
+        states = '\n'.join(r'"s%(state)s" [label="%(state)s:%(output)s"]' % {
+            'state': state.label,
+            'output': state.output
+        } for state in self.states.values())
+
+        edges = '\n'.join(r's%(src)s -> s%(dst)s [label="%(edge)s"]' % {
+            'src': state.label,
+            'dst': target.label,
+            'edge': '%s:%s' % (input, output)
+        } for state in self.states.values()
+          for (input, output, target) in self.outgoing_edges_from(state))
+        
+        return '''
+digraph G {
+    %(states)s
+%(edges)s
+}
+''' % locals()
+
     # { state: { input: [output, state] } }
     def __init__(self):
         self.T = defaultdict(lambda: defaultdict(lambda: [None, None]))
@@ -185,13 +209,16 @@ def lcp(files):
     return files[0]
     
 def make_onward(T, state):
+
     for (input, output, outgoing_state) in T.outgoing_edges_from(state):
         f_a = make_onward(T, outgoing_state)
-        # print 'f_a',f_a
+        debug('f_a: %s', f_a)
         # print 'setting edge output string %s from %s on %s'%(T.edge_output_string(state, input) + f_a, state, input)
         T.set_edge_output_string(state, input,
                                  T.edge_output_string(state, input) + f_a)
         # print 'T here:',T
+    # if state.label=='':
+    #     import pdb;pdb.set_trace()
         
     # index 1 is the output string
     outgoing_edges_outputs = [ e[1] for e in T.outgoing_edges_from(state) ]
@@ -201,11 +228,11 @@ def make_onward(T, state):
         f = state.output
     len_f = len(f)
     
-    if len_f > 0:
+    if len_f > 0 and not state.label == '':
         for (input, output, outgoing_state) in T.outgoing_edges_from(state):
             T.set_edge_output_string(state, input,
                                      T.edge_output_string(state, input)[len_f:])
-
+        
         if state.output is not BOT:
             state.output = state.output[len_f:]
         
@@ -257,7 +284,7 @@ def merge(orig_T, red_states, red_state, blue_state):
         # point it to red_state instead
         
         previous_target_state = T.edge_target_state(incoming_state, input)
-        print 'setting destination of %s on %s from %s to %s' % (
+        debug('setting destination of %s on %s from %s to %s',
             incoming_state, input, previous_target_state, red_state)
         reassignments[ (incoming_state, input) ] = previous_target_state
         T.set_edge_target_state(incoming_state, input, red_state)
@@ -267,7 +294,7 @@ def merge(orig_T, red_states, red_state, blue_state):
     if result is None:
         # roll back
         for (incoming_state, input), old_target_state in reassignments.items():
-            print 'rolling back destination of %s on %s from %s to %s' % (
+            debug('rolling back destination of %s on %s from %s to %s',
                 incoming_state, input, T.edge_target_state(incoming_state, input), old_target_state)
             T.set_edge_target_state(incoming_state, input, old_target_state)
             
@@ -275,7 +302,6 @@ def merge(orig_T, red_states, red_state, blue_state):
     
 def fold(T, red_states, q, q_):
     w = outputs_are_equal(q.output, q_.output)
-    print 'w: %s' % w
     if w is None:
         return None
     else:
@@ -289,7 +315,7 @@ def fold(T, red_states, q, q_):
                     if T.edge_target_state(q, input) in red_states:
                     # if T.edge_output_string(q, input) != T.edge_output_string(q_, input):
                         # import pdb;pdb.set_trace()
-                        print '%s is a red state, failing' % T.edge_target_state(q, input)
+                        debug('%s is a red state, failing', T.edge_target_state(q, input))
                         q.output = old_q_output
                         return None
                     else:
@@ -305,34 +331,30 @@ def fold(T, red_states, q, q_):
         
 def ostia(data):
     T = build_ptt(data)
-    print 'original'
-    print T
     make_onward(T, T.get_state(''))
-    print 'onward'
-    print T
     
     red_states = { T.get_state('') }
     blue_states = [ T.get_state(input) for (input, output) in data if len(input) == 1 ]
 
     while blue_states:
-        print 'blue states: ',blue_states
-        print 'red states: ',red_states
+        debug('blue states: %s',blue_states)
+        debug('red states: %s',red_states)
         
         q = blue_states.pop(0)
-        print 'POP blue state: %s' % q
+        debug('POP blue state: %s', q)
         
         for p in red_states:
-            print 'TRYING MERGE %s and %s' % (p,q)
+            debug('TRYING MERGE %s and %s',p,q)
             merged_T = merge(T, red_states, p, q)
             if merged_T is not None:
                 # accept merged as the new T
-                print 'SUCCEEDED MERGE %s and %s merged_T %s' % (p, q, merged_T)
+                debug('SUCCEEDED MERGE %s and %s merged_T %s', p, q, merged_T)
                 T = merged_T
                 break
             else:
-                print 'FAILED MERGE %s and %s' % (p,q)
+                debug('FAILED MERGE %s and %s',p,q)
         else:
-            print 'exhausted all merges between %s and red states' % q
+            debug('exhausted all merges between %s and red states', q)
             red_states.add(q)
             
         # update blue_states to contain
@@ -357,7 +379,14 @@ if __name__ == '__main__':
         
     else:
         data = [ ('a', '1'), ('b', '1'), ('aa', '01'), ('ab', '01'), ('aaa', '001'), ('abab', '0101') ]
-        ostia(data)
+        # data = [ ('abc', 'abc'), ('def', 'def'), ('def', 'deg')]
+        T = ostia(data)
+        print T.as_graph()
+        
+        # T = build_ptt(data)
+        # print 'ptt',T
+        # make_onward(T, T.get_state(''))
+        # print T
         # T = build_ptt(data)
         # make_onward(T, T.get_state(''))
         # print T
