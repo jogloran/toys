@@ -49,18 +49,25 @@ class State(object):
     def __deepcopy__(self, memo):
         return self#State(self.label, self.output)
         
-LAMBDA = ''
+import pdb
+LAMBDA = ()
 class Transducer(object):
     def as_graph(self):
+        def can(output):
+            try:
+                if output is None: return '()'
+                return ''.join(reversed(output))
+            except:
+                pdb.post_mortem()
         states = '\n'.join(r'"s%(state)s" [label="%(state)s:%(output)s"]' % {
-            'state': state.label,
-            'output': state.output
+            'state': can(state.label),
+            'output': can(state.output),
         } for state in self.states.values())
 
-        edges = '\n'.join(r's%(src)s -> s%(dst)s [label="%(edge)s"]' % {
-            'src': state.label,
-            'dst': target.label,
-            'edge': '%s:%s' % (input, output)
+        edges = '\n'.join(r'"s%(src)s" -> "s%(dst)s" [label="%(edge)s"]' % {
+            'src': can(state.label),
+            'dst': can(target.label),
+            'edge': '%s:%s' % (input, can(output))
         } for state in self.states.values()
           for (input, output, target) in self.outgoing_edges_from(state))
         
@@ -186,7 +193,7 @@ def lcp(files):
 '12'
 '''    
     if len(files) == 0:
-        return ''
+        return LAMBDA
         
     if (all( f == BOT for f in files )):
         return BOT
@@ -221,21 +228,22 @@ def make_onward(T, state):
     #     import pdb;pdb.set_trace()
         
     # index 1 is the output string
+    # import pdb;pdb.set_trace()
     outgoing_edges_outputs = [ e[1] for e in T.outgoing_edges_from(state) ]
     if outgoing_edges_outputs:
         f = lcp( [ state.output, lcp(outgoing_edges_outputs) ] )
     else:
         f = state.output
-    len_f = len(f)
+    len_f = 0 if (f is None) else len(f)
     
-    if len_f > 0 and not state.label == '':
+    if len_f > 0 and not state.label == LAMBDA:
         for (input, output, outgoing_state) in T.outgoing_edges_from(state):
             T.set_edge_output_string(state, input,
                                      T.edge_output_string(state, input)[len_f:])
         
         if state.output is not BOT:
             state.output = state.output[len_f:]
-        
+
     return f
     
 def outputs_are_equal(w1, w2):
@@ -331,9 +339,9 @@ def fold(T, red_states, q, q_):
         
 def ostia(data):
     T = build_ptt(data)
-    make_onward(T, T.get_state(''))
+    make_onward(T, T.get_state(LAMBDA))
     
-    red_states = { T.get_state('') }
+    red_states = { T.get_state(LAMBDA) }
     blue_states = [ T.get_state(input) for (input, output) in data if len(input) == 1 ]
 
     while blue_states:
@@ -369,6 +377,15 @@ def ostia(data):
                         blue_states.append(outgoing_state)
                     
     return T
+    
+def interpret_piped(fn):
+    data = []
+    for line in file(fn, 'r'):
+        line = line.rstrip()
+        mando, canto = line.split()
+        data.append( (tuple(reversed(canto.split('|')[:-1])), tuple(reversed(mando.split('|')[:-1]))) )
+        # data.append( (tuple(canto.split('|')[:-1]), tuple(mando.split('|')[:-1])) )
+    return data
 
 if __name__ == '__main__':
 #    T = ostia([ ('abc', '101'), ('aec', '121'), ('fg', '345'), ('fh', '320') ])
@@ -378,8 +395,9 @@ if __name__ == '__main__':
         doctest.testmod()
         
     else:
-        data = [ ('a', '1'), ('b', '1'), ('aa', '01'), ('ab', '01'), ('aaa', '001'), ('abab', '0101') ]
+        # data = [ ('a', '1'), ('b', '1'), ('aa', '01'), ('ab', '01'), ('aaa', '001'), ('abab', '0101') ]
         # data = [ ('abc', 'abc'), ('def', 'def'), ('def', 'deg')]
+        data = interpret_piped('piped')
         T = ostia(data)
         print T.as_graph()
         
