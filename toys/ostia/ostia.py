@@ -13,13 +13,14 @@ True
 False
 '''
 
+import sys
 import copy
 from itertools import chain, islice, izip
 from collections import defaultdict
 
 class ddict(defaultdict):
     def __repr__(self):
-        s = '{ '
+        s = '{'
         for k, v in self.iteritems():
             s += '%s: %s ' % (k,v)
         s += '}'
@@ -51,6 +52,8 @@ class Transducer(object):
         if state_label not in self.states:
             self.add_state(state_label)
         return self.states[state_label]
+    def remove_state(self, state_label):
+        del self.states[state_label]
         
     def add_state(self, state_label, output=BOT):
         self.states[state_label] = State(state_label, output)
@@ -133,9 +136,29 @@ def build_ptt(data_pairs):
     return transducer
     
 def lcp(files):
-    print 'lcp(%s)' % files
-    # treat LAMBDA as nothing
-    files = [ f for f in files if f != LAMBDA and f != BOT ]
+    '''
+>>> lcp(['123', '1234', '12'])
+'12'
+>>> lcp(['', '12345', '12'])
+''
+>>> lcp(['456', '234', '123'])
+''
+>>> lcp([])
+''
+>>> lcp(['123'])
+'123'
+>>> lcp(['123', '123', '123'])
+'123'
+>>> lcp(['123', '12', BOT])
+'12'
+>>> lcp([BOT, BOT])
+BOT
+    '''
+    if (all( f == BOT for f in files )):
+        return BOT
+        
+    # treat BOT as nothing
+    files = [ f for f in files if f != BOT ]
     
     if len(files) == 0:
         return ''
@@ -157,17 +180,21 @@ def lcp(files):
 def make_onward(T, state):
     for (input, output, outgoing_state) in T.outgoing_edges_from(state):
         f_a = make_onward(T, outgoing_state)
-        print 'f_a',f_a
-        print 'setting edge output string %s from %s on %s'%(T.edge_output_string(state, input) + f_a, state, input)
+        # print 'f_a',f_a
+        # print 'setting edge output string %s from %s on %s'%(T.edge_output_string(state, input) + f_a, state, input)
         T.set_edge_output_string(state, input,
                                  T.edge_output_string(state, input) + f_a)
-        print 'T here:',T
+        # print 'T here:',T
         
     # index 1 is the output string
-    f = lcp( [ lcp( [ e[1] for e in T.outgoing_edges_from(state) ] ),
-             state.output ] )
+    outgoing_edges_outputs = [ e[1] for e in T.outgoing_edges_from(state) ]
+    if outgoing_edges_outputs:
+        f = lcp( [ state.output, lcp(outgoing_edges_outputs) ] )
+    else:
+        f = state.output
     len_f = len(f)
-    print 'f',f
+    
+    print 'state %s, lcp: %s' % (state, f)
     
     if len_f > 0:
         for (input, output, outgoing_state) in T.outgoing_edges_from(state):
@@ -190,23 +217,27 @@ def outputs_are_equal(w1, w2):
 def pushback(T, state1, state2, input):
     u = lcp([ T.edge_output_string(state1, input), T.edge_output_string(state2, input) ])
     len_u = len(u)
-    
+
     u1 = T.edge_output_string(state1, input)[len_u:]
     u2 = T.edge_output_string(state2, input)[len_u:]
     
     T.set_edge_output_string(state1, input, u)
     T.set_edge_output_string(state2, input, u)
     
-    for (input, output, outgoing_state) in T.outgoing_edges_from(state1):
-        T.set_edge_output_string(state1, input,
-                                 u1 + T.edge_output_string(state1, input))
-        T.set_edge_output_string(state2, input,
-                                 u2 + T.edge_output_string(state2, input))
+    state1_successor = T.edge_target_state(state1, input)
+    state2_successor = T.edge_target_state(state2, input)
     
-    state1.output = u1 + state1.output
-    state2.output = u2 + state2.output
+    for (input, output, outgoing_state) in T.outgoing_edges_from(state1_successor):
+        T.set_edge_output_string(state1_successor, input,
+                                 u1 + T.edge_output_string(state1_successor, input))
+    for (input, output, outgoing_state) in T.outgoing_edges_from(state2_successor):
+        T.set_edge_output_string(state2_successor, input,
+                                 u2 + T.edge_output_string(state2_successor, input))
     
-def merge(orig_T, red_state, blue_state):
+    state1_successor.output = u1 + state1_successor.output
+    state2_successor.output = u2 + state2_successor.output
+    
+def merge(orig_T, red_states, red_state, blue_state):
     # for any state incoming to blue_state:
     #     point it to red_state instead
     # fold(T, red_state, blue_state)
@@ -215,20 +246,30 @@ def merge(orig_T, red_state, blue_state):
         for (input, output, outgoing_state) in T.outgoing_edges_from(incoming_state):
             T.set_edge_target_state(input, output, red_state)
     
-    return fold(T, red_state, blue_state)
+    return fold(T, red_states, red_state, blue_state)
     
-def fold(T, q, q_):
+def fold(T, red_states, q, q_):
     w = outputs_are_equal(q.output, q_.output)
+    print 'w: %s' % w
     if w is None:
         return None
     else:
         q.output = w
-        for a in common_input_strings_out_of_states(T, q, q_):
-            if False:
-                pass
-            else:
-                pushback(T, q, q_, a)
-                fold(T, T.edge_target_state(q, a), T.edge_target_state(q_, a))
+
+        for a in common_input_strings_out_of_states(T, q, q_):        
+            if T.edge_target_state(q_, a) is not None:
+                if T.edge_target_state(q, a) is not None:
+                    # if q on input a takes you to a red state, fail
+                    if T.edge_target_state(q, a) in red_states:
+                        return None
+                    else:
+                        pushback(T, q, q_, a)
+                        fold(T, red_states, T.edge_target_state(q, a), T.edge_target_state(q_, a))
+                else:
+                    T.set_edge_target_state(q, a,
+                                            T.edge_target_state(q_, a))
+
+        # T.remove_state(q_.label)
                 
         return T
         # for any input string A on an edge coming out of both q and q_,
@@ -261,13 +302,18 @@ def ostia(data):
 
     while blue_states:
         q = blue_states.pop()
+        print 'blue state: %s' % q
         
         for p in red_states:
-            merged_T = merge(T, p, q)
+            print 'trying to merge %s and %s' % (p,q)
+            merged_T = merge(T, red_states, p, q)
             if merged_T is not None:
                 # accept merged as the new T
+                print 'accepting merged_T %s' % merged_T
                 T = merged_T
                 break
+            else:
+                print 'failed to merge'
         else:
             red_states.add(q)
             
@@ -277,12 +323,30 @@ def ostia(data):
             for (input, output, outgoing_state) in T.outgoing_edges_from(red_state):
                 if outgoing_state not in red_states:
                     blue_states.add(outgoing_state)
+                    
     return T
 
 if __name__ == '__main__':
 #    T = ostia([ ('abc', '101'), ('aec', '121'), ('fg', '345'), ('fh', '320') ])
-    T = ostia([ ('a', '1'), ('b', '1'), ('aa', '01'), ('aaa', '001'), ('abab', '0101') ])
-    print T
 
-    import doctest
-    doctest.testmod()
+    if '-t' in sys.argv[1:]:
+        import doctest
+        doctest.testmod()
+        
+    else:
+        #data = [ ('a', '1'), ('b', '1'), ('aa', '01'), ('aaa', '001'), ('abab', '0101') ]
+        # T = ostia(data)
+        # print T
+        
+        T = Transducer()
+        q1, q2, q3, q4, q5, q6 = State('q1', '0'), State('q2', '1'), \
+            State('q3', '0'), State('q4', LAMBDA), \
+            State('q5', LAMBDA), State('q6', '1')
+        T.add_transition(q1, 'a', '1', q3)
+        T.add_transition(q3, 'b', '1', q5)
+        T.add_transition(q2, 'a', '10', q4)
+        T.add_transition(q4, 'c', '1', q6)
+        print T
+        pushback(T, q1, q2, 'a')
+        print T
+        
