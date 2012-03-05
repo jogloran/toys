@@ -26,7 +26,7 @@ class ddict(defaultdict):
         return s
 defaultdict = ddict
 
-BOT = ''
+BOT = None
 class State(object):
     def __init__(self, label, output=BOT):
         self.label = label
@@ -135,7 +135,7 @@ def build_ptt(data_pairs):
 def lcp(files):
     print 'lcp(%s)' % files
     # treat LAMBDA as nothing
-    files = [ f for f in files if f != LAMBDA ]
+    files = [ f for f in files if f != LAMBDA and f != BOT ]
     
     if len(files) == 0:
         return ''
@@ -174,7 +174,10 @@ def make_onward(T, state):
             T.set_edge_output_string(state, input,
                                      T.edge_output_string(state, input)[len_f:])
 
-        state.output = state.output[len_f:]
+        if state.output == BOT: 
+            state.output = BOT
+        else:
+            state.output = state.output[len_f:]
         
     return f
     
