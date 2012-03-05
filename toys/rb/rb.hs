@@ -1,18 +1,6 @@
 data Colour = R | B
 data RBNode a = Empty | Node Colour (RBNode a) a (RBNode a)
 
-instance Show Colour where
-    show R = "R"
-    show B = "B"
-    
--- instance Show a => Show (RBNode a) where
---     show Empty = "_"
---     show (Node c l x r) = "(" ++ (show c) ++ " " ++ (show l) ++ " " ++ (show x) ++ " " ++ (show r) ++ ")"
-
-instance Show a => Show (RBNode a) where
-    show Empty = ""
-    show (Node c l x r) = "(" ++ (show l) ++ " " ++ (show x) ++ " " ++ (show r) ++ ")"
-
 find v Empty = False
 find v (Node _ l x r) | v < x     = find v l
                       | v > x     = find v r
